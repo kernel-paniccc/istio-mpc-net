@@ -1,0 +1,12 @@
+apiVersion: k0s.k0sproject.io/v1beta1
+kind: ClusterConfig
+metadata:
+  name: istio-mpc-net
+spec:
+  api:
+    address: 192.168.56.10
+    sans:
+      - 192.168.56.10
+      - k0s-master
+  network:
+    provider: calico
