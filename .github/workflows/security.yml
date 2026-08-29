@@ -22,8 +22,12 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install linters
-        run: pipx install ansible-lint && pipx install yamllint
+      - name: Install Ansible dependencies and linters
+        run: |
+          pipx install ansible-core
+          pipx install ansible-lint
+          pipx install yamllint
+          ansible-galaxy collection install ansible.posix
 
       - name: Lint Ansible playbooks
         run: ansible-lint k0s-vagrant-cluster/ansible/*.yml
