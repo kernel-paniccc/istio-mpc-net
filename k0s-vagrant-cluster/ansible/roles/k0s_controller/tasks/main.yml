@@ -1,0 +1,157 @@
+---
+- name: Ensure k0s configuration directory exists
+  ansible.builtin.file:
+    path: /etc/k0s
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install controller configuration
+  ansible.builtin.template:
+    src: k0s.yaml.j2
+    dest: "{{ k0s_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart k0s controller
+
+- name: Install and start k0s controller
+  ansible.builtin.command: >-
+    k0s install controller --config {{ k0s_config_path }} --enable-worker --force --start
+  changed_when: false
+
+- name: Wait for controller API
+  ansible.builtin.command: k0s kubectl get nodes
+  register: k0s_controller_nodes
+  retries: 24
+  delay: 5
+  until: k0s_controller_nodes.rc == 0
+  changed_when: false
+
+- name: Wait for controller node registration
+  ansible.builtin.command: k0s kubectl get node {{ ansible_hostname }}
+  register: k0s_controller_node
+  retries: 24
+  delay: 5
+  until: k0s_controller_node.rc == 0
+  changed_when: false
+
+- name: Create local kubeconfig directory
+  ansible.builtin.file:
+    path: "{{ k0s_host_kubeconfig_dir }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  become: false
+
+- name: Read admin kubeconfig from controller
+  ansible.builtin.command: k0s kubeconfig admin
+  register: k0s_controller_admin_kubeconfig
+  changed_when: false
+  no_log: true
+
+- name: Parse controller admin kubeconfig
+  ansible.builtin.set_fact:
+    k0s_controller_admin_kubeconfig_data: "{{ k0s_controller_admin_kubeconfig.stdout | from_yaml }}"
+  no_log: true
+
+- name: Write host cluster CA certificate
+  ansible.builtin.copy:
+    content: "{{ k0s_controller_admin_kubeconfig_data.clusters[0].cluster['certificate-authority-data'] | b64decode }}"
+    dest: "{{ k0s_host_kubeconfig_dir }}/ca.crt"
+    mode: "0644"
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Write host client certificate
+  ansible.builtin.copy:
+    content: "{{ k0s_controller_admin_kubeconfig_data.users[0].user['client-certificate-data'] | b64decode }}"
+    dest: "{{ k0s_host_kubeconfig_dir }}/client.crt"
+    mode: "0644"
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Write host client private key
+  ansible.builtin.copy:
+    content: "{{ k0s_controller_admin_kubeconfig_data.users[0].user['client-key-data'] | b64decode }}"
+    dest: "{{ k0s_host_kubeconfig_dir }}/client.key"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Configure host kubeconfig cluster
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - config
+      - set-cluster
+      - "{{ project_name }}"
+      - "--server=https://{{ k0s_api_address }}:6443"
+      - "--certificate-authority={{ k0s_host_kubeconfig_dir }}/ca.crt"
+      - --embed-certs=false
+  delegate_to: localhost
+  become: false
+  changed_when: false
+
+- name: Configure host kubeconfig credentials
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - config
+      - set-credentials
+      - "{{ project_name }}-admin"
+      - "--client-certificate={{ k0s_host_kubeconfig_dir }}/client.crt"
+      - "--client-key={{ k0s_host_kubeconfig_dir }}/client.key"
+      - --embed-certs=false
+  delegate_to: localhost
+  become: false
+  changed_when: false
+
+- name: Configure host kubeconfig context
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - config
+      - set-context
+      - "{{ project_name }}"
+      - "--cluster={{ project_name }}"
+      - "--user={{ project_name }}-admin"
+      - --namespace=default
+  delegate_to: localhost
+  become: false
+  changed_when: false
+
+- name: Select project context on host
+  ansible.builtin.command: kubectl config use-context {{ project_name }}
+  delegate_to: localhost
+  become: false
+  changed_when: false
+
+
+- name: Protect control plane from application workloads
+  ansible.builtin.command: >-
+    k0s kubectl taint node {{ ansible_hostname }}
+    node-role.kubernetes.io/control-plane=:NoSchedule --overwrite
+  register: k0s_controller_taint
+  changed_when: "'tainted' in k0s_controller_taint.stdout"
+
+- name: Check project namespace
+  ansible.builtin.command: k0s kubectl get namespace {{ project_namespace }}
+  register: k0s_controller_project_namespace_check
+  failed_when: false
+  changed_when: false
+
+- name: Create project namespace
+  ansible.builtin.command: k0s kubectl create namespace {{ project_namespace }}
+  when: k0s_controller_project_namespace_check.rc != 0
+  changed_when: true
+
+- name: Create a worker join token
+  ansible.builtin.command: k0s token create --role=worker --expiry=1h
+  register: k0s_controller_worker_join_token
+  changed_when: false
+  no_log: true

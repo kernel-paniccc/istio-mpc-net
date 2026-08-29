@@ -1,0 +1,16 @@
+---
+- name: Build k0s controller
+  hosts: controllers
+  become: true
+  gather_facts: true
+  roles:
+    - common
+    - k0s_controller
+
+- name: Build k0s worker
+  hosts: workers
+  become: true
+  gather_facts: true
+  roles:
+    - common
+    - k0s_worker

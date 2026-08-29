@@ -1,0 +1,31 @@
+---
+- name: Ensure k0s configuration directory exists
+  ansible.builtin.file:
+    path: /etc/k0s
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write temporary worker join token
+  ansible.builtin.copy:
+    content: "{{ hostvars['master'].k0s_controller_worker_join_token.stdout }}\n"
+    dest: /etc/k0s/worker-token
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart k0s worker
+
+- name: Install and start k0s worker
+  ansible.builtin.command: >-
+    k0s install worker --token-file /etc/k0s/worker-token --force --start
+  changed_when: false
+
+- name: Wait for worker service
+  ansible.builtin.command: k0s status
+  register: k0s_worker_status
+  retries: 24
+  delay: 5
+  until: k0s_worker_status.rc == 0
+  changed_when: false

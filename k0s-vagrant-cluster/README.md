@@ -1,52 +1,44 @@
 # k0s Vagrant cluster
 
-Two Ubuntu 22.04 VMs: a k0s controller (also schedulable) and one worker. It is
-adapted from the supplied k3s Vagrant template, but uses k0s's embedded
-containerd instead of installing Docker.
+This lab creates two Ubuntu 22.04 VMs with libvirt:
 
-## Start
+- `k0s-master`: k0s control plane, tainted `NoSchedule`;
+- `k0s-worker`: k0s workload node.
+
+Vagrant creates virtual machines only. Ansible applies the cluster roles in a
+separate, explicit step; this prevents each VM from provisioning a multi-node
+playbook independently.
+
+## Deploy the base cluster
 
 ```sh
 cd k0s-vagrant-cluster
-cp env/local.env.example env/local.env
-source env/local.env
-vagrant up --provider=libvirt
+vagrant up --no-provision --provider=libvirt
+cd ansible
+ansible-playbook site.yml
 ```
 
-All local state is under `env/runtime/`: Vagrant metadata, the Vagrant home and
-the cluster kubeconfig. `env/local.env` is ignored by Git and never modifies
-`~/.kube/config`.
+The playbook applies `common`, `k0s_controller`, and `k0s_worker` roles in that
+order, then creates the `istio-mpc-net` namespace. It registers both VMs as
+Kubernetes nodes.
+
+## Host access
+
+The playbook installs the `istio-mpc-net` context in the host's standard
+`~/.kube/config`. The referenced CA, client certificate, and client key are
+stored outside the repository in `~/.kube/istio-mpc-net/`; the private key has
+mode `0600`.
+
+After the playbook completes, use:
 
 ```sh
+kubens istio-mpc-net
 kubectl get nodes
-kubens demo
 ```
 
-These commands address the master API at `192.168.56.10:6443`, so the host has
-the same cluster-administration access as the control-plane node. For a shell
-session, keep it explicit and isolated:
+## Lifecycle
 
 ```sh
-kubectl cluster-info
-kubens demo
-```
-
-`kubens` switches the namespace through the project-local kubeconfig, keeping
-your other cluster contexts unchanged. If `demo` does not exist yet, create it:
-
-```sh
-kubectl create namespace demo
-kubens demo
-```
-
-Re-run provisioning after changing Ansible files:
-
-```sh
-vagrant provision
-```
-
-Destroy only these VMs when finished:
-
-```sh
+vagrant halt
 vagrant destroy -f
 ```

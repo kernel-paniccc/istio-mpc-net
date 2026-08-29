@@ -1,0 +1,28 @@
+---
+- name: Install k0s prerequisites
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+    update_cache: true
+
+- name: Enable IPv4 forwarding
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    state: present
+    reload: true
+
+- name: Download pinned k0s binary
+  ansible.builtin.get_url:
+    url: "{{ k0s_download_url }}"
+    dest: /usr/local/bin/k0s
+    checksum: "{{ k0s_checksum }}"
+    owner: root
+    group: root
+    mode: "0755"
+    timeout: 180
+  register: common_k0s_download
+  retries: 3
+  delay: 10
+  until: common_k0s_download is succeeded

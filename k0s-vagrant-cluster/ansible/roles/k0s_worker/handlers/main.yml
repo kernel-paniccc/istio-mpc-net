@@ -1,0 +1,5 @@
+---
+- name: Restart k0s worker
+  ansible.builtin.command: >-
+    k0s install worker --token-file /etc/k0s/worker-token --force --start
+  changed_when: false

@@ -1,0 +1,10 @@
+---
+project_name: istio-mpc-net
+project_namespace: istio-mpc-net
+k0s_version: v1.36.3+k0s.0
+k0s_arch: amd64
+k0s_download_url: "https://github.com/k0sproject/k0s/releases/download/{{ k0s_version }}/k0s-{{ k0s_version }}-{{ k0s_arch }}"
+k0s_checksum: "sha256:cb15600575b0257e23bb24a01703293e9666694b09636320ac4326fe6edde6f2"
+k0s_config_path: /etc/k0s/k0s.yaml
+k0s_api_address: 192.168.56.10
+k0s_host_kubeconfig_dir: "{{ lookup('env', 'HOME') }}/.kube/istio-mpc-net"
